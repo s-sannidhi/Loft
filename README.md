@@ -99,6 +99,20 @@ Split the **static UI** and the **Express API** into two deployments. The browse
 
 6. **CORS:** the API uses open `cors()` today so any origin can call it. For a single known frontend, you can later restrict `origin` to your Vercel URL.
 
+### API on Railway
+
+Deploy the **Express API** as its own Railway service (keep the **frontend** on Vercel, or add a second Railway service for static hosting if you prefer).
+
+1. [Railway](https://railway.app) → **New project** → **Deploy from GitHub** → select this repo.
+2. Railway may auto-detect Node. Open the service **Settings**:
+   - **Build command:** `npm install` (avoids running `vite build` when you only need the API).
+   - **Start command:** `npm start` (runs `node server/index.mjs` via [`package.json`](package.json)) or `node server/index.mjs` directly.
+3. **Variables** tab — add the same secrets as for Render, e.g. `JWT_SECRET`, `JSONBIN_KEY`, `OMDB_API_KEY` or `VITE_OMDB_KEY`, optional TMDB / Watchmode keys. Railway injects **`PORT`**; the server already uses it.
+4. **Networking** → generate a **public URL** (or attach a custom domain).
+5. Copy the public URL (no trailing slash) into Vercel as **`VITE_API_URL`** and redeploy the frontend.
+
+Usage is billed by resource consumption; small APIs are typically a few dollars per month—check Railway’s current pricing.
+
 ### Free tier and persistence (important)
 
 Free Node hosts usually use an **ephemeral filesystem**. Anything under `server/data/` (`loft-db.json`, `rooms.json`, uploaded avatars) can be **lost** on redeploy or when the instance sleeps.
