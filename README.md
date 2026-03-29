@@ -113,6 +113,17 @@ Deploy the **Express API** as its own Railway service (keep the **frontend** on 
 
 Usage is billed by resource consumption; small APIs are typically a few dollars per month—check Railway’s current pricing.
 
+### Troubleshooting: `POST /api/rooms` returns 500
+
+- Open the failing request in the browser **Network** tab and read the JSON **`error`** message in the response body.
+- **JSONBin:** use your **Master key** (`$2a$10$…`), not a read-only access key. If the disk is read-only, set **`JSONBIN_KEY`** so rooms use JSONBin instead of `server/data/rooms.json`.
+- **Node:** the API needs **Node 18+** (global `fetch`). The repo declares `"engines": { "node": ">=18" }` and [`render.yaml`](render.yaml) sets `NODE_VERSION`. In Render **Environment**, you can also set `NODE_VERSION` to `20` manually.
+- After changing server env vars, **redeploy** the API service.
+
+### Cold starts (free API tiers)
+
+The app is tuned for sleepy hosts (e.g. Render free): Loft API calls **retry** on 502/503/504 and transient network errors, the shell **pings** `/api/health` once on load to start waking the server, the **last opened room** is cached in `sessionStorage` so return visits show the shelf immediately while a fresh fetch runs, and the **landing page** stays navigable while `/api/auth/me` loads.
+
 ### Free tier and persistence (important)
 
 Free Node hosts usually use an **ephemeral filesystem**. Anything under `server/data/` (`loft-db.json`, `rooms.json`, uploaded avatars) can be **lost** on redeploy or when the instance sleeps.

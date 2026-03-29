@@ -271,8 +271,27 @@ function LandingPage() {
               Watch together without the chaos.
             </h1>
             <p className="mt-5 text-lg leading-relaxed text-ink/80">
-              Loading your session…
+              Loft is a warm, collaborative shelf for movies and series—room links for your
+              crew, progress you can trust, and profiles for what you have finished.
             </p>
+            <p className="meta-font mt-4 max-w-xl text-sm text-ink/55">
+              Checking your session… On free API hosting this can take up to a minute after
+              idle. You can still open a watchlist or log in below.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                to="/watch"
+                className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-cream shadow-cafe hover:brightness-110"
+              >
+                Open watchlist
+              </Link>
+              <Link
+                to="/login"
+                className="rounded-xl border border-mutedline bg-cream px-6 py-3 text-sm font-semibold text-ink hover:bg-card"
+              >
+                Log in
+              </Link>
+            </div>
           </>
         ) : user ? (
           <>

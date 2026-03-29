@@ -1,10 +1,11 @@
+import { loftApiUrl } from './apiBase.js'
+import { fetchWithRetry } from './fetchWithRetry.js'
 import { readLocalSavedRooms } from './localSavedRooms.js'
 
 const TOKEN_KEY = 'loft_token'
 
 export function apiPath(path) {
-  const base = import.meta.env.VITE_API_URL || ''
-  return base ? `${base.replace(/\/$/, '')}${path}` : path
+  return loftApiUrl(path)
 }
 
 /** Absolute URL for images served from the API (e.g. uploaded avatars). */
@@ -50,7 +51,12 @@ export async function socialFetch(path, options = {}) {
     body = JSON.stringify(body)
     headers['Content-Type'] = 'application/json'
   }
-  const res = await fetch(apiPath(path), { ...options, method, headers, body })
+  const res = await fetchWithRetry(apiPath(path), {
+    ...options,
+    method,
+    headers,
+    body,
+  })
   const text = await res.text()
   let data = null
   try {

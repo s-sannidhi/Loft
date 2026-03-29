@@ -1,3 +1,5 @@
+import { loftApiUrl } from './apiBase.js'
+import { fetchWithRetry } from './fetchWithRetry.js'
 import { getStoredToken } from './socialApi.js'
 
 const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b'
@@ -11,13 +13,8 @@ function getEnv(name) {
   return value
 }
 
-function getEnvOptional(name) {
-  return import.meta.env[name] || ''
-}
-
 function apiUrl(path) {
-  const base = getEnvOptional('VITE_API_URL')
-  return base ? `${base.replace(/\/$/, '')}${path}` : path
+  return loftApiUrl(path)
 }
 
 function getJsonBinHeaders() {
@@ -57,7 +54,7 @@ async function tryServerRoom(method, path, body) {
     opts.body = JSON.stringify(body)
   }
   opts.headers = headers
-  return fetch(apiUrl(path), opts)
+  return fetchWithRetry(apiUrl(path), opts)
 }
 
 function canDirectJsonBin() {
@@ -71,9 +68,22 @@ function canDirectJsonBin() {
 export async function createRoom() {
   const payload = { roomName: 'Loft', movies: [] }
   const serverRes = await tryServerRoom('POST', '/api/rooms', payload)
+  const rawText = await serverRes.text()
+  let data = null
+  try {
+    data = rawText ? JSON.parse(rawText) : null
+  } catch {
+    data = null
+  }
   if (serverRes.ok) {
-    const data = await serverRes.json()
     if (data?.id) return data.id
+    const looksLikeHtml =
+      rawText.includes('<!DOCTYPE') || rawText.includes('<html')
+    throw new Error(
+      looksLikeHtml
+        ? 'Got HTML instead of JSON—the request likely hit your frontend, not the API. Set VITE_API_URL on Vercel to your Loft API URL (no trailing slash) and redeploy.'
+        : 'Room API returned OK but no room id. Check API logs and JSONBIN_KEY / server configuration.'
+    )
   }
   if (canDirectJsonBin()) {
     const response = await fetch(JSONBIN_BASE_URL, {
@@ -84,9 +94,11 @@ export async function createRoom() {
     const data = await parseJsonOrThrow(response, 'Failed to create room')
     return data?.metadata?.id
   }
-  const t = await serverRes.text()
+  const t = data?.error || rawText
   throw new Error(
-    t || 'Room API unavailable. Run the Loft server or set VITE_JSONBIN_KEY for direct mode.'
+    typeof t === 'string' && t
+      ? t
+      : 'Room API unavailable. Run the Loft server or set VITE_JSONBIN_KEY for direct mode.'
   )
 }
 
@@ -199,7 +211,9 @@ export async function getSeasonEpisodes(seriesImdbID, season) {
 export async function fetchWatchProvidersByImdb(imdbId) {
   const id = imdbId.startsWith('tt') ? imdbId : `tt${imdbId}`
   try {
-    const res = await fetch(apiUrl(`/api/streaming/${encodeURIComponent(id)}`))
+    const res = await fetchWithRetry(
+      apiUrl(`/api/streaming/${encodeURIComponent(id)}`)
+    )
     if (res.ok) {
       const data = await res.json().catch(() => ({}))
       if (Array.isArray(data?.providers) && data.providers.length > 0) {

@@ -21,6 +21,12 @@ import {
   deleteLocalRoomReview,
 } from './roomsStore.mjs'
 import { validateStrictUsername } from './usernameValidate.mjs'
+import { fetch as undiciFetch } from 'undici'
+
+/** Render and older Node images may lack global fetch (JSONBin + TMDB use it). */
+if (typeof globalThis.fetch !== 'function') {
+  globalThis.fetch = undiciFetch
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const AVATAR_DIR = join(__dirname, 'data', 'avatars')
@@ -258,8 +264,20 @@ app.post('/api/rooms', optionalAuth, async (req, res) => {
       body: JSON.stringify(payload),
     })
     const data = await parseJsonOrThrow(response, 'Failed to create room')
-    return res.json({ id: data?.metadata?.id })
+    const binId = data?.metadata?.id ?? data?.id
+    if (binId == null || binId === '') {
+      console.error(
+        '[POST /api/rooms] JSONBin response missing id:',
+        JSON.stringify(data)?.slice(0, 400)
+      )
+      return res.status(502).json({
+        error:
+          'JSONBin did not return a bin id. Check JSONBIN_KEY and JSONBin dashboard; response shape may have changed.',
+      })
+    }
+    return res.json({ id: String(binId) })
   } catch (e) {
+    console.error('[POST /api/rooms]', e)
     return res.status(500).json({ error: e.message })
   }
 })

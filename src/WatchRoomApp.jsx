@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import CreateRoomView from './components/CreateRoomView'
 import MovieGrid from './components/MovieGrid'
@@ -11,6 +11,10 @@ import StatusPopup from './components/StatusPopup'
 import TopBar from './components/TopBar'
 import { createRoom, getMovieDetails, getRoom, updateRoom } from './lib/api'
 import { mergeProfileShelfItems } from './lib/mergeProfileShelf'
+import {
+  readRoomSessionCache,
+  writeRoomSessionCache,
+} from './lib/roomSessionCache'
 import { fetchMyWatched, putWatched } from './lib/socialApi'
 import { touchSavedRoom } from './lib/savedRoomsDirectory'
 import { useAuth } from './context/useAuth'
@@ -47,6 +51,8 @@ function WatchRoomApp() {
   const roomId = searchParams.get('room')
   const { user } = useAuth()
 
+  const sessionCached = roomId ? readRoomSessionCache(roomId) : null
+
   const [shareOpen, setShareOpen] = useState(false)
   const [membersOpen, setMembersOpen] = useState(false)
   const [shelfSyncNote, setShelfSyncNote] = useState('')
@@ -55,14 +61,19 @@ function WatchRoomApp() {
   const shelfDebounceRef = useRef(null)
 
   const [creatingRoom, setCreatingRoom] = useState(false)
-  const [loadingRoom, setLoadingRoom] = useState(Boolean(roomId))
+  const [loadingRoom, setLoadingRoom] = useState(() =>
+    Boolean(roomId && !sessionCached)
+  )
+  const [roomRefreshing, setRoomRefreshing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [roomData, setRoomData] = useState(() =>
-    normalizeClientRoom({
-      roomName: 'Loft',
-      movies: [],
-    })
+    normalizeClientRoom(
+      sessionCached || {
+        roomName: 'Loft',
+        movies: [],
+      }
+    )
   )
   const roomDataRef = useRef(roomData)
   const progressPersistTimers = useRef({})
@@ -79,12 +90,20 @@ function WatchRoomApp() {
     setRoomData(merged)
   }, [])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!roomId) {
       setLoadingRoom(false)
+      setRoomRefreshing(false)
       return
     }
-    setLoadingRoom(true)
+    const cached = readRoomSessionCache(roomId)
+    if (cached) {
+      setRoomData(normalizeClientRoom(cached))
+      setLoadingRoom(false)
+    } else {
+      setRoomData(normalizeClientRoom({ roomName: 'Loft', movies: [] }))
+      setLoadingRoom(true)
+    }
   }, [roomId])
 
   useEffect(() => {
@@ -98,6 +117,7 @@ function WatchRoomApp() {
       return
     }
     const raw = await getRoom(roomId)
+    writeRoomSessionCache(roomId, raw)
     const remote = normalizeClientRoom(raw)
     setRoomData((current) => {
       const remoteStr = JSON.stringify(remote)
@@ -113,11 +133,17 @@ function WatchRoomApp() {
     let cancelled = false
 
     async function load() {
+      const hadCache = Boolean(readRoomSessionCache(roomId))
       try {
-        setLoadingRoom(true)
+        if (hadCache) {
+          setRoomRefreshing(true)
+        } else {
+          setLoadingRoom(true)
+        }
         setError('')
         const raw = await getRoom(roomId)
         if (!cancelled) {
+          writeRoomSessionCache(roomId, raw)
           setRoomData(normalizeClientRoom(raw))
         }
       } catch (loadError) {
@@ -127,6 +153,7 @@ function WatchRoomApp() {
       } finally {
         if (!cancelled) {
           setLoadingRoom(false)
+          setRoomRefreshing(false)
         }
       }
     }
@@ -159,6 +186,9 @@ function WatchRoomApp() {
       })
       roomDataRef.current = merged
       setRoomData(merged)
+      if (record && typeof record === 'object') {
+        writeRoomSessionCache(roomId, record)
+      }
     } catch (saveError) {
       setError(saveError.message)
       await syncRoom()
@@ -397,8 +427,12 @@ function WatchRoomApp() {
 
   if (loadingRoom) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-ink/80">
-        Loading room…
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="text-lg font-medium text-ink">Loading your room…</p>
+        <p className="meta-font max-w-md text-sm leading-relaxed text-ink/60">
+          On free hosting the API can take up to a minute to wake after idle. Requests retry
+          automatically—no need to refresh.
+        </p>
       </div>
     )
   }
@@ -408,6 +442,17 @@ function WatchRoomApp() {
 
   return (
     <main className="relative min-h-screen">
+      {roomRefreshing ? (
+        <div
+          className="border-b border-mutedline/80 bg-honey/15 px-5 py-2 text-center lg:px-10"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="meta-font text-xs text-ink/75">
+            Syncing latest from the server…
+          </p>
+        </div>
+      ) : null}
       <TopBar
         roomName={roomData.roomName}
         movieCount={roomData.movies.length}

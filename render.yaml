@@ -10,3 +10,6 @@ services:
     buildCommand: npm install
     startCommand: node server/index.mjs
     healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20.18.0"

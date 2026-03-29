@@ -100,9 +100,19 @@ export function loadRoomsDb() {
 }
 
 export function saveRoomsDb(db) {
-  const dir = dirname(ROOMS_PATH)
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(ROOMS_PATH, JSON.stringify({ rooms: db.rooms }, null, 2), 'utf8')
+  try {
+    const dir = dirname(ROOMS_PATH)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(ROOMS_PATH, JSON.stringify({ rooms: db.rooms }, null, 2), 'utf8')
+  } catch (e) {
+    const code = e?.code
+    if (code === 'EROFS' || code === 'EACCES' || code === 'EPERM') {
+      throw new Error(
+        'Cannot write room data to disk (read-only or permission denied). Set JSONBIN_KEY on the server to use JSONBin for rooms, or use a host with a writable filesystem.'
+      )
+    }
+    throw e
+  }
 }
 
 /**
