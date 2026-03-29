@@ -1,0 +1,207 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Mono:wght@400..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import 'tailwindcss';
+
+/* Tailwind v4 + Vite reads theme from here — tailwind.config.js theme.extend is not applied by default. */
+@theme {
+  --font-sans: 'Playfair Display', Georgia, serif;
+  --font-mono: 'Noto Sans Mono', ui-monospace, monospace;
+
+  /* Light roast — café paper & latte surfaces */
+  --color-parchment: #f6f0e8;
+  --color-card: #ebe0d4;
+  --color-accent: #7a4f3a;
+  --color-ink: #2c1f18;
+  --color-cream: #fffaf5;
+  --color-scrim: #1a1410;
+  --color-mutedline: #b8a99a;
+
+  --color-sage: #7d8f7a;
+  --color-blush: #c99595;
+  --color-honey: #b8922e;
+  --color-sky: #8a9eb0;
+}
+
+/* Dark roast — espresso bar */
+html.dark {
+  --color-parchment: #14100e;
+  --color-card: #1f1a16;
+  --color-accent: #c4a07a;
+  --color-ink: #f2e8dc;
+  --color-cream: #1c1815;
+  --color-scrim: #0a0807;
+  --color-mutedline: #3d342c;
+
+  --color-sage: #9cb0a0;
+  --color-blush: #d4a5a5;
+  --color-honey: #e0b84d;
+  --color-sky: #9eb4c8;
+}
+
+:root {
+  color: var(--color-ink);
+  background-color: var(--color-parchment);
+  font-family: var(--font-sans);
+}
+
+input[type='checkbox'] {
+  accent-color: var(--color-accent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background-color: var(--color-parchment);
+  background-image:
+    radial-gradient(ellipse 90% 70% at 0% 0%, rgb(200 160 140 / 0.22), transparent 55%),
+    radial-gradient(ellipse 80% 60% at 100% 10%, rgb(120 100 80 / 0.12), transparent 50%),
+    radial-gradient(ellipse 70% 50% at 100% 100%, rgb(180 150 120 / 0.18), transparent 45%),
+    linear-gradient(180deg, var(--color-parchment) 0%, var(--color-cream) 55%, var(--color-parchment) 100%);
+  background-attachment: fixed;
+}
+
+html.dark body {
+  background-image:
+    radial-gradient(ellipse 85% 65% at 8% 5%, rgb(180 120 80 / 0.12), transparent 50%),
+    radial-gradient(ellipse 70% 55% at 95% 15%, rgb(100 140 120 / 0.08), transparent 48%),
+    radial-gradient(ellipse 60% 45% at 90% 95%, rgb(160 100 70 / 0.1), transparent 45%),
+    linear-gradient(180deg, var(--color-parchment) 0%, var(--color-cream) 50%, var(--color-parchment) 100%);
+}
+
+.meta-font {
+  font-family: var(--font-mono);
+}
+
+.shadow-cafe {
+  box-shadow:
+    0 4px 24px color-mix(in srgb, var(--color-ink) 12%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-ink) 8%, transparent);
+}
+
+.shadow-cafe-lg {
+  box-shadow:
+    0 12px 48px color-mix(in srgb, var(--color-ink) 16%, transparent),
+    0 4px 12px color-mix(in srgb, var(--color-ink) 10%, transparent);
+}
+
+/* Modal scrim: darker at edges, softer center (still readable). */
+.bg-scrim-fade {
+  background: radial-gradient(
+    ellipse 95% 90% at 50% 42%,
+    color-mix(in srgb, var(--color-scrim) 74%, transparent) 0%,
+    color-mix(in srgb, var(--color-scrim) 86%, transparent) 52%,
+    color-mix(in srgb, var(--color-scrim) 92%, transparent) 100%
+  );
+}
+
+.bg-scrim-fade-light {
+  background: radial-gradient(
+    ellipse 100% 100% at 50% 45%,
+    color-mix(in srgb, var(--color-scrim) 55%, transparent) 0%,
+    color-mix(in srgb, var(--color-scrim) 72%, transparent) 55%,
+    color-mix(in srgb, var(--color-scrim) 82%, transparent) 100%
+  );
+}
+
+@keyframes modalBackdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalDialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-modal-backdrop {
+  animation: modalBackdropFadeIn 0.28s ease-out forwards;
+}
+
+.animate-modal-dialog {
+  animation: modalDialogIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes staggerFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.fade-in-card {
+  opacity: 0;
+  animation: staggerFadeInUp 0.5s ease forwards;
+}
+
+.movie-card-perspective {
+  perspective: 920px;
+}
+
+.movie-card-3d {
+  transform-style: preserve-3d;
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .movie-card-perspective:hover .movie-card-3d,
+  .movie-card-perspective:focus-within .movie-card-3d {
+    transform: rotateX(2.5deg) rotateY(-2.5deg) translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-modal-backdrop,
+  .animate-modal-dialog {
+    animation: none;
+    opacity: 1;
+  }
+
+  .animate-modal-dialog {
+    transform: none;
+  }
+
+  .fade-in-card {
+    animation: none;
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+
+  .movie-card-3d {
+    transition: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .movie-card-perspective:hover .movie-card-3d,
+    .movie-card-perspective:focus-within .movie-card-3d {
+      transform: none;
+    }
+  }
+
+  body {
+    background-attachment: scroll;
+  }
+}
