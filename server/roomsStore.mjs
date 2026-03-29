@@ -74,6 +74,15 @@ export function normalizeRoomRecord(raw) {
   }
 }
 
+/** New room document (local disk or JSONBin). */
+export function initialRoomRecordForCreate(body, ownerUserId = null) {
+  return normalizeRoomRecord({
+    ...normalizePayload(body),
+    ownerUserId: ownerUserId || null,
+    sharedUserIds: [],
+  })
+}
+
 export function isValidRoomId(id) {
   return typeof id === 'string' && /^[a-zA-Z0-9_-]{8,80}$/.test(id)
 }
@@ -122,11 +131,7 @@ export function saveRoomsDb(db) {
 export function createLocalRoom(body, ownerUserId = null) {
   const db = loadRoomsDb()
   const id = randomUUID()
-  const rec = normalizeRoomRecord({
-    ...normalizePayload(body),
-    ownerUserId: ownerUserId || null,
-    sharedUserIds: [],
-  })
+  const rec = initialRoomRecordForCreate(body, ownerUserId)
   db.rooms[id] = rec
   saveRoomsDb(db)
   return id
@@ -139,32 +144,35 @@ export function getLocalRoom(id) {
   return record ? normalizeRoomRecord(record) : null
 }
 
-/** Client PUT: only updates roomName + movies; preserves owner + shared lists. */
-export function putLocalRoom(id, body) {
-  if (!isValidRoomId(id)) return null
-  const db = loadRoomsDb()
-  const existing = db.rooms[id]
-  if (!existing) return null
+/** Client PUT: only updates roomName + movies; preserves owner, shared, reviews. */
+export function mergeClientPutIntoRecord(existingRaw, body) {
+  if (!existingRaw) return null
   const parsed = normalizePayload(body)
-  const ext = normalizeRoomRecord(existing)
-  const next = {
+  const ext = normalizeRoomRecord(existingRaw)
+  return {
     roomName: parsed.roomName,
     movies: parsed.movies,
     ownerUserId: ext.ownerUserId,
     sharedUserIds: ext.sharedUserIds,
     reviews: ext.reviews,
   }
+}
+
+/** Client PUT: only updates roomName + movies; preserves owner + shared lists. */
+export function putLocalRoom(id, body) {
+  if (!isValidRoomId(id)) return null
+  const db = loadRoomsDb()
+  const existing = db.rooms[id]
+  if (!existing) return null
+  const next = mergeClientPutIntoRecord(existing, body)
   db.rooms[id] = next
   saveRoomsDb(db)
   return next
 }
 
-export function patchLocalRoomReview(roomId, imdbID, userId, { rating, text }) {
-  if (!isValidRoomId(roomId) || !imdbID || !userId) return null
-  const db = loadRoomsDb()
-  const rec = db.rooms[roomId]
-  if (!rec) return null
-  const norm = normalizeRoomRecord(rec)
+export function recordWithReviewPatch(recordRaw, imdbID, userId, { rating, text }) {
+  if (!imdbID || !userId) return null
+  const norm = normalizeRoomRecord(recordRaw)
   const inShelf = norm.movies.some((m) => m.imdbID === imdbID)
   if (!inShelf) return null
   if (!norm.reviews[imdbID]) norm.reviews[imdbID] = {}
@@ -191,8 +199,29 @@ export function patchLocalRoomReview(roomId, imdbID, userId, { rating, text }) {
     text: nextText,
     updatedAt: Date.now(),
   }
-  db.rooms[roomId] = norm
+  return norm
+}
+
+export function patchLocalRoomReview(roomId, imdbID, userId, patch) {
+  if (!isValidRoomId(roomId) || !imdbID || !userId) return null
+  const db = loadRoomsDb()
+  const rec = db.rooms[roomId]
+  if (!rec) return null
+  const next = recordWithReviewPatch(rec, imdbID, userId, patch)
+  if (!next) return null
+  db.rooms[roomId] = next
   saveRoomsDb(db)
+  return next
+}
+
+export function recordWithReviewDelete(recordRaw, imdbID, userId) {
+  const norm = normalizeRoomRecord(recordRaw)
+  if (norm.reviews[imdbID]?.[userId]) {
+    delete norm.reviews[imdbID][userId]
+    if (Object.keys(norm.reviews[imdbID]).length === 0) {
+      delete norm.reviews[imdbID]
+    }
+  }
   return norm
 }
 
@@ -201,15 +230,26 @@ export function deleteLocalRoomReview(roomId, imdbID, userId) {
   const db = loadRoomsDb()
   const rec = db.rooms[roomId]
   if (!rec) return null
-  const norm = normalizeRoomRecord(rec)
-  if (norm.reviews[imdbID]?.[userId]) {
-    delete norm.reviews[imdbID][userId]
-    if (Object.keys(norm.reviews[imdbID]).length === 0) {
-      delete norm.reviews[imdbID]
-    }
-  }
+  const norm = recordWithReviewDelete(rec, imdbID, userId)
   db.rooms[roomId] = norm
   saveRoomsDb(db)
+  return norm
+}
+
+export function recordWithShareAdded(recordRaw, targetUserId) {
+  if (!targetUserId) return null
+  const norm = normalizeRoomRecord(recordRaw)
+  if (norm.sharedUserIds.includes(targetUserId)) {
+    return norm
+  }
+  norm.sharedUserIds.push(targetUserId)
+  return norm
+}
+
+export function recordWithShareRemoved(recordRaw, targetUserId) {
+  if (!targetUserId) return null
+  const norm = normalizeRoomRecord(recordRaw)
+  norm.sharedUserIds = norm.sharedUserIds.filter((id) => id !== targetUserId)
   return norm
 }
 
@@ -218,13 +258,8 @@ export function addLocalRoomShare(roomId, targetUserId) {
   const db = loadRoomsDb()
   const rec = db.rooms[roomId]
   if (!rec) return null
-  const norm = normalizeRoomRecord(rec)
-  if (norm.sharedUserIds.includes(targetUserId)) {
-    db.rooms[roomId] = norm
-    saveRoomsDb(db)
-    return norm
-  }
-  norm.sharedUserIds.push(targetUserId)
+  const norm = recordWithShareAdded(rec, targetUserId)
+  if (!norm) return null
   db.rooms[roomId] = norm
   saveRoomsDb(db)
   return norm
@@ -235,8 +270,8 @@ export function removeLocalRoomShare(roomId, targetUserId) {
   const db = loadRoomsDb()
   const rec = db.rooms[roomId]
   if (!rec) return null
-  const norm = normalizeRoomRecord(rec)
-  norm.sharedUserIds = norm.sharedUserIds.filter((id) => id !== targetUserId)
+  const norm = recordWithShareRemoved(rec, targetUserId)
+  if (!norm) return null
   db.rooms[roomId] = norm
   saveRoomsDb(db)
   return norm

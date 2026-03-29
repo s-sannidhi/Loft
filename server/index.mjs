@@ -19,7 +19,15 @@ import {
   removeLocalRoomShare,
   patchLocalRoomReview,
   deleteLocalRoomReview,
+  initialRoomRecordForCreate,
+  mergeClientPutIntoRecord,
+  normalizeRoomRecord,
+  recordWithReviewPatch,
+  recordWithReviewDelete,
+  recordWithShareAdded,
+  recordWithShareRemoved,
 } from './roomsStore.mjs'
+import { jsonBinGetRecord, jsonBinPutRecord } from './jsonBinRooms.mjs'
 import { validateStrictUsername } from './usernameValidate.mjs'
 import { fetch as undiciFetch } from 'undici'
 
@@ -258,10 +266,11 @@ app.post('/api/rooms', optionalAuth, async (req, res) => {
         error: 'JSONBin not configured. Set JSONBIN_KEY or use ROOM_STORAGE=local (default when key is absent).',
       })
     }
+    const initial = initialRoomRecordForCreate(payload, req.userId || null)
     const response = await fetch(JSONBIN_BASE, {
       method: 'POST',
       headers: jsonBinHeaders(),
-      body: JSON.stringify(payload),
+      body: JSON.stringify(initial),
     })
     const data = await parseJsonOrThrow(response, 'Failed to create room')
     const binId = data?.metadata?.id ?? data?.id
@@ -294,11 +303,16 @@ app.get('/api/rooms/:id/latest', async (req, res) => {
     if (!JSONBIN_KEY) {
       return res.status(503).json({ error: 'Room API not configured' })
     }
-    const response = await fetch(`${JSONBIN_BASE}/${req.params.id}/latest`, {
-      headers: jsonBinHeaders(),
-    })
-    const data = await parseJsonOrThrow(response, 'Failed to load room')
-    return res.json(data?.record)
+    let raw
+    try {
+      raw = await jsonBinGetRecord(JSONBIN_KEY, req.params.id)
+    } catch (e) {
+      return res.status(502).json({ error: e.message })
+    }
+    if (raw == null) {
+      return res.status(404).json({ error: 'Room not found' })
+    }
+    return res.json(enrichLocalRoomForClient(normalizeRoomRecord(raw)))
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }
@@ -320,29 +334,51 @@ app.put('/api/rooms/:id', async (req, res) => {
     if (!JSONBIN_KEY) {
       return res.status(503).json({ error: 'Room API not configured' })
     }
-    const response = await fetch(`${JSONBIN_BASE}/${req.params.id}`, {
-      method: 'PUT',
-      headers: jsonBinHeaders(),
-      body: JSON.stringify(req.body),
-    })
-    const data = await parseJsonOrThrow(response, 'Failed to save room')
-    return res.json(data?.record)
+    const body =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : { roomName: 'Loft', movies: [] }
+    let existingRaw
+    try {
+      existingRaw = await jsonBinGetRecord(JSONBIN_KEY, req.params.id)
+    } catch (e) {
+      return res.status(502).json({ error: e.message })
+    }
+    if (existingRaw == null) {
+      return res.status(404).json({ error: 'Room not found' })
+    }
+    const next = mergeClientPutIntoRecord(existingRaw, body)
+    let saved
+    try {
+      saved = await jsonBinPutRecord(JSONBIN_KEY, req.params.id, next)
+    } catch (e) {
+      return res.status(502).json({ error: e.message })
+    }
+    return res.json(enrichLocalRoomForClient(normalizeRoomRecord(saved)))
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }
 })
 
-app.get('/api/rooms/:id/share-options', requireAuth, (req, res) => {
-  if (roomsBackend() !== 'local') {
-    return res.status(501).json({
-      error: 'Friend sharing needs local room storage (unset JSONBIN_KEY or set ROOM_STORAGE=local).',
-    })
-  }
+app.get('/api/rooms/:id/share-options', requireAuth, async (req, res) => {
   const roomId = req.params.id
   if (!isValidRoomId(roomId)) {
     return res.status(400).json({ error: 'Invalid room id' })
   }
-  const record = getLocalRoom(roomId)
+  let record
+  try {
+    if (roomsBackend() === 'local') {
+      record = getLocalRoom(roomId)
+    } else {
+      if (!JSONBIN_KEY) {
+        return res.status(503).json({ error: 'Room API not configured' })
+      }
+      const raw = await jsonBinGetRecord(JSONBIN_KEY, roomId)
+      record = raw != null ? normalizeRoomRecord(raw) : null
+    }
+  } catch (e) {
+    return res.status(502).json({ error: e.message })
+  }
   if (!record) return res.status(404).json({ error: 'Room not found' })
   if (!record.ownerUserId) {
     return res.status(403).json({
@@ -373,12 +409,7 @@ app.get('/api/rooms/:id/share-options', requireAuth, (req, res) => {
   return res.json({ friends, sharedUsers })
 })
 
-app.post('/api/rooms/:id/share', requireAuth, (req, res) => {
-  if (roomsBackend() !== 'local') {
-    return res.status(501).json({
-      error: 'Friend sharing needs local room storage.',
-    })
-  }
+app.post('/api/rooms/:id/share', requireAuth, async (req, res) => {
   const roomId = req.params.id
   if (!isValidRoomId(roomId)) {
     return res.status(400).json({ error: 'Invalid room id' })
@@ -387,7 +418,20 @@ app.post('/api/rooms/:id/share', requireAuth, (req, res) => {
   if (!vu.ok) {
     return res.status(400).json({ error: vu.error })
   }
-  const record = getLocalRoom(roomId)
+  let recordRaw
+  try {
+    if (roomsBackend() === 'local') {
+      recordRaw = getLocalRoom(roomId)
+    } else {
+      if (!JSONBIN_KEY) {
+        return res.status(503).json({ error: 'Room API not configured' })
+      }
+      recordRaw = await jsonBinGetRecord(JSONBIN_KEY, roomId)
+    }
+  } catch (e) {
+    return res.status(502).json({ error: e.message })
+  }
+  const record = recordRaw != null ? normalizeRoomRecord(recordRaw) : null
   if (!record) return res.status(404).json({ error: 'Room not found' })
   if (!record.ownerUserId || record.ownerUserId !== req.userId) {
     return res.status(403).json({ error: 'Only the room owner can share' })
@@ -398,22 +442,41 @@ app.post('/api/rooms/:id/share', requireAuth, (req, res) => {
   if (target.id === record.ownerUserId) {
     return res.status(400).json({ error: 'Owner already has the room' })
   }
-  addLocalRoomShare(roomId, target.id)
+  if (roomsBackend() === 'local') {
+    addLocalRoomShare(roomId, target.id)
+  } else {
+    const next = recordWithShareAdded(recordRaw, target.id)
+    try {
+      await jsonBinPutRecord(JSONBIN_KEY, roomId, next)
+    } catch (e) {
+      return res.status(502).json({ error: e.message })
+    }
+  }
   touchUserSavedRoom(db, target.id, roomId, record.roomName)
   saveStore(db)
   return res.json({ ok: true })
 })
 
-app.delete('/api/rooms/:id/share/:targetUserId', requireAuth, (req, res) => {
-  if (roomsBackend() !== 'local') {
-    return res.status(501).json({ error: 'Friend sharing needs local room storage.' })
-  }
+app.delete('/api/rooms/:id/share/:targetUserId', requireAuth, async (req, res) => {
   const roomId = req.params.id
   const targetUserId = String(req.params.targetUserId || '')
   if (!isValidRoomId(roomId)) {
     return res.status(400).json({ error: 'Invalid room id' })
   }
-  const record = getLocalRoom(roomId)
+  let recordRaw
+  try {
+    if (roomsBackend() === 'local') {
+      recordRaw = getLocalRoom(roomId)
+    } else {
+      if (!JSONBIN_KEY) {
+        return res.status(503).json({ error: 'Room API not configured' })
+      }
+      recordRaw = await jsonBinGetRecord(JSONBIN_KEY, roomId)
+    }
+  } catch (e) {
+    return res.status(502).json({ error: e.message })
+  }
+  const record = recordRaw != null ? normalizeRoomRecord(recordRaw) : null
   if (!record) return res.status(404).json({ error: 'Room not found' })
   if (!record.ownerUserId || record.ownerUserId !== req.userId) {
     return res.status(403).json({ error: 'Only the room owner can manage sharing' })
@@ -421,47 +484,99 @@ app.delete('/api/rooms/:id/share/:targetUserId', requireAuth, (req, res) => {
   if (!targetUserId) {
     return res.status(400).json({ error: 'Invalid user' })
   }
-  removeLocalRoomShare(roomId, targetUserId)
+  if (roomsBackend() === 'local') {
+    removeLocalRoomShare(roomId, targetUserId)
+  } else {
+    const next = recordWithShareRemoved(recordRaw, targetUserId)
+    if (!next) {
+      return res.status(400).json({ error: 'Invalid user' })
+    }
+    try {
+      await jsonBinPutRecord(JSONBIN_KEY, roomId, next)
+    } catch (e) {
+      return res.status(502).json({ error: e.message })
+    }
+  }
   const db = loadStore()
   removeUserSavedRoom(db, targetUserId, roomId)
   saveStore(db)
   return res.json({ ok: true })
 })
 
-app.patch('/api/rooms/:roomId/reviews/:imdbID', requireAuth, (req, res) => {
-  if (roomsBackend() !== 'local') {
-    return res.status(501).json({ error: 'Reviews require local room storage.' })
-  }
+app.patch('/api/rooms/:roomId/reviews/:imdbID', requireAuth, async (req, res) => {
   const roomId = req.params.roomId
   const imdbID = decodeURIComponent(req.params.imdbID || '')
   if (!isValidRoomId(roomId) || !imdbID) {
     return res.status(400).json({ error: 'Invalid room or title' })
   }
-  const record = getLocalRoom(roomId)
-  if (!record) return res.status(404).json({ error: 'Room not found' })
-  const next = patchLocalRoomReview(roomId, imdbID, req.userId, {
+  if (roomsBackend() === 'local') {
+    const record = getLocalRoom(roomId)
+    if (!record) return res.status(404).json({ error: 'Room not found' })
+    const next = patchLocalRoomReview(roomId, imdbID, req.userId, {
+      rating: req.body?.rating,
+      text: req.body?.text,
+    })
+    if (!next) {
+      return res.status(400).json({ error: 'That title is not in this room' })
+    }
+    return res.json(enrichLocalRoomForClient(next))
+  }
+  if (!JSONBIN_KEY) {
+    return res.status(503).json({ error: 'Room API not configured' })
+  }
+  let recordRaw
+  try {
+    recordRaw = await jsonBinGetRecord(JSONBIN_KEY, roomId)
+  } catch (e) {
+    return res.status(502).json({ error: e.message })
+  }
+  if (recordRaw == null) return res.status(404).json({ error: 'Room not found' })
+  const next = recordWithReviewPatch(recordRaw, imdbID, req.userId, {
     rating: req.body?.rating,
     text: req.body?.text,
   })
   if (!next) {
     return res.status(400).json({ error: 'That title is not in this room' })
   }
-  return res.json(enrichLocalRoomForClient(next))
+  let saved
+  try {
+    saved = await jsonBinPutRecord(JSONBIN_KEY, roomId, next)
+  } catch (e) {
+    return res.status(502).json({ error: e.message })
+  }
+  return res.json(enrichLocalRoomForClient(normalizeRoomRecord(saved)))
 })
 
-app.delete('/api/rooms/:roomId/reviews/:imdbID', requireAuth, (req, res) => {
-  if (roomsBackend() !== 'local') {
-    return res.status(501).json({ error: 'Reviews require local room storage.' })
-  }
+app.delete('/api/rooms/:roomId/reviews/:imdbID', requireAuth, async (req, res) => {
   const roomId = req.params.roomId
   const imdbID = decodeURIComponent(req.params.imdbID || '')
   if (!isValidRoomId(roomId) || !imdbID) {
     return res.status(400).json({ error: 'Invalid room or title' })
   }
-  const record = getLocalRoom(roomId)
-  if (!record) return res.status(404).json({ error: 'Room not found' })
-  const next = deleteLocalRoomReview(roomId, imdbID, req.userId)
-  return res.json(enrichLocalRoomForClient(next))
+  if (roomsBackend() === 'local') {
+    const record = getLocalRoom(roomId)
+    if (!record) return res.status(404).json({ error: 'Room not found' })
+    const next = deleteLocalRoomReview(roomId, imdbID, req.userId)
+    return res.json(enrichLocalRoomForClient(next))
+  }
+  if (!JSONBIN_KEY) {
+    return res.status(503).json({ error: 'Room API not configured' })
+  }
+  let recordRaw
+  try {
+    recordRaw = await jsonBinGetRecord(JSONBIN_KEY, roomId)
+  } catch (e) {
+    return res.status(502).json({ error: e.message })
+  }
+  if (recordRaw == null) return res.status(404).json({ error: 'Room not found' })
+  const next = recordWithReviewDelete(recordRaw, imdbID, req.userId)
+  let saved
+  try {
+    saved = await jsonBinPutRecord(JSONBIN_KEY, roomId, next)
+  } catch (e) {
+    return res.status(502).json({ error: e.message })
+  }
+  return res.json(enrichLocalRoomForClient(normalizeRoomRecord(saved)))
 })
 
 /* ---------- Auth ---------- */
@@ -713,24 +828,34 @@ app.put('/api/auth/watched', requireAuth, (req, res) => {
   return res.json({ ok: true, count: user.watched.length })
 })
 
-app.get('/api/auth/rooms', requireAuth, (req, res) => {
+app.get('/api/auth/rooms', requireAuth, async (req, res) => {
   const db = loadStore()
   const user = db.users.find((u) => u.id === req.userId)
   if (!user) return res.status(404).json({ error: 'User not found' })
   const list = sortSavedRoomsDesc(userSavedRooms(user))
-  const rooms = list.map((r) => {
-    let role = 'link'
-    if (roomsBackend() === 'local') {
-      const rec = getLocalRoom(r.id)
-      if (rec) role = roomRoleForUser(rec, req.userId)
-    }
-    return {
-      id: r.id,
-      name: r.name || 'Loft',
-      lastVisited: r.lastVisited || 0,
-      role,
-    }
-  })
+  const backend = roomsBackend()
+  const rooms = await Promise.all(
+    list.map(async (r) => {
+      let role = 'link'
+      try {
+        if (backend === 'local') {
+          const rec = getLocalRoom(r.id)
+          if (rec) role = roomRoleForUser(rec, req.userId)
+        } else if (JSONBIN_KEY) {
+          const raw = await jsonBinGetRecord(JSONBIN_KEY, r.id)
+          if (raw) role = roomRoleForUser(normalizeRoomRecord(raw), req.userId)
+        }
+      } catch {
+        /* keep link */
+      }
+      return {
+        id: r.id,
+        name: r.name || 'Loft',
+        lastVisited: r.lastVisited || 0,
+        role,
+      }
+    })
+  )
   return res.json({ rooms })
 })
 
@@ -1004,16 +1129,30 @@ async function buildOmdbRecommendationsPayload(record, inRoom) {
   }
 }
 
-app.get('/api/rooms/:id/recommendations', async (req, res) => {
-  if (roomsBackend() !== 'local') {
-    return res.status(501).json({ error: 'Recommendations need local room storage.' })
+/** Room shelf for recommendations — same sources as GET /api/rooms/:id/latest. */
+async function loadRoomRecordForRecommendations(roomId) {
+  if (roomsBackend() === 'local') {
+    return getLocalRoom(roomId)
   }
+  if (!JSONBIN_KEY) return null
+  const raw = await jsonBinGetRecord(JSONBIN_KEY, roomId)
+  return raw != null ? normalizeRoomRecord(raw) : null
+}
+
+app.get('/api/rooms/:id/recommendations', async (req, res) => {
   const roomId = req.params.id
   if (!isValidRoomId(roomId)) {
     return res.status(400).json({ error: 'Invalid room id' })
   }
-  const record = getLocalRoom(roomId)
-  if (!record) return res.status(404).json({ error: 'Room not found' })
+  let record
+  try {
+    record = await loadRoomRecordForRecommendations(roomId)
+  } catch (e) {
+    return res.status(502).json({ error: e.message || 'Failed to load room for suggestions' })
+  }
+  if (!record) {
+    return res.status(404).json({ error: 'Room not found' })
+  }
   const movies = record.movies || []
   if (movies.length === 0) {
     return res.json({

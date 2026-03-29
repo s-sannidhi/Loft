@@ -5,7 +5,7 @@ Shared movie/show watchlist with a café-inspired UI, optional accounts, friends
 ## Features
 
 - **Landing** (`/`) — product overview with “how it works” and architecture diagrams.
-- **Watchlist room** (`/watch?room=…`) — persisted on the **Loft server** (`server/data/rooms.json`) by default, or **JSONBin** if you set `JSONBIN_KEY`; polling sync, OMDB search, TV episode modal, **title suggestions** via **TMDB** (if configured) or **OMDB search** from your shelf genres/keywords (no TMDB account), per-title **reviews** (signed-in), **members** list, and **share by @handle** for room owners (local rooms).
+- **Watchlist room** (`/watch?room=…`) — persisted on the **Loft server** (`server/data/rooms.json`) by default, or **JSONBin** if you set `JSONBIN_KEY`; polling sync, OMDB search, TV episode modal, **title suggestions** via **TMDB** (if configured) or **OMDB search** from your shelf genres/keywords (no TMDB account), per-title **reviews** (signed-in), **members** list, and **share by @handle** for room owners (create the room while logged in so it has an owner).
 - **Dark mode** — theme toggle (auto / light / dark), persisted in `localStorage`.
 - **Where to watch** — **Watchmode** on the Loft server (`WATCHMODE_API_KEY`, free at [watchmode.com](https://api.watchmode.com/requestApiKey/)); optional **TMDB** fallback; **JustWatch** search link on every card.
 - **Mark complete** — per title, stored in room state.
@@ -99,6 +99,19 @@ Split the **static UI** and the **Express API** into two deployments. The browse
 
 6. **CORS:** the API uses open `cors()` today so any origin can call it. For a single known frontend, you can later restrict `origin` to your Vercel URL.
 
+### Local room storage vs JSONBin (reviews, sharing, members)
+
+The API stores each watch room either on **disk** (`server/data/rooms.json` on the server) or in **JSONBin** (cloud), depending on environment variables.
+
+| Mode | How it’s selected | Full feature set |
+|------|-------------------|------------------|
+| **JSONBin** | `JSONBIN_KEY` is set **and** `ROOM_STORAGE` is **not** `local` | Same room features as disk: watchlist sync, recommendations, reviews, share-by-handle, and members (owner is set when the room is created with a valid session). Older bins created before owner metadata may behave like link-only rooms until recreated. |
+| **Local disk** | **Either** omit `JSONBIN_KEY`, **or** set `ROOM_STORAGE=local` (this **forces** disk even if `JSONBIN_KEY` is still set for something else) | Same as JSONBin; data lives in `server/data/rooms.json` instead of the cloud. |
+
+**To use “local room storage” on Render/Railway:** in the API service **Environment**, set **`ROOM_STORAGE=local`** and **redeploy**. Optionally **remove** `JSONBIN_KEY` if you only care about disk mode (otherwise you can keep the key unused for rooms while `ROOM_STORAGE=local` is set).
+
+**Tradeoff:** on free PaaS, disk is often **ephemeral** — watchlists and reviews can disappear on redeploy or instance recycle. **JSONBin** keeps room JSON durable without a mounted disk. **Accounts and avatars** stay in `loft-db.json` on the server unless you use a host with persistent disk or migrate auth storage. For **durable everything on one VM**, use a **persistent disk** mount pointed at `server/data/` and `ROOM_STORAGE=local` (or omit `JSONBIN_KEY`).
+
 ### API on Railway
 
 Deploy the **Express API** as its own Railway service (keep the **frontend** on Vercel, or add a second Railway service for static hosting if you prefer).
@@ -128,7 +141,7 @@ The app is tuned for sleepy hosts (e.g. Render free): Loft API calls **retry** o
 
 Free Node hosts usually use an **ephemeral filesystem**. Anything under `server/data/` (`loft-db.json`, `rooms.json`, uploaded avatars) can be **lost** on redeploy or when the instance sleeps.
 
-- **Rooms:** set **`JSONBIN_KEY`** on the API so watchlists live in JSONBin (already supported by the server).
+- **Rooms:** set **`JSONBIN_KEY`** so watchlists (including reviews and sharing metadata) survive redeploys without a persistent disk, **or** use **`ROOM_STORAGE=local`** and accept ephemeral disk on free tiers unless the host gives you a real volume (see **Local room storage vs JSONBin** above).
 - **Accounts, profile shelf, avatars:** still file-backed unless you run the API on a **VM with a real disk** (e.g. Oracle Cloud Always Free) or migrate storage later.
 - Use a strong **`JWT_SECRET`** in production; treat free-tier data as non-durable unless you use JSONBin + a persistent host for auth files.
 
