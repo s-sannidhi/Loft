@@ -1,0 +1,12 @@
+# Render Blueprint — optional. Link repo in Render and use "Apply blueprint", or create a Web Service manually with the same settings.
+# Set secrets in the Render dashboard (JWT_SECRET, JSONBIN_KEY, OMDB keys, etc.); do not commit them here.
+
+services:
+  - type: web
+    name: loft-api
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: node server/index.mjs
+    healthCheckPath: /api/health

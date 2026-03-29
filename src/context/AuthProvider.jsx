@@ -3,9 +3,11 @@ import {
   fetchMe,
   getStoredToken,
   login as apiLogin,
+  mergeLocalSavedRoomsToServer,
   setStoredToken,
   signup as apiSignup,
 } from '../lib/socialApi'
+import { resetSavedRoomApiThrottle } from '../lib/savedRoomsDirectory'
 import { AuthContext } from './authContext.js'
 
 export function AuthProvider({ children }) {
@@ -22,9 +24,12 @@ export function AuthProvider({ children }) {
     try {
       const me = await fetchMe()
       setUser(me)
-    } catch {
-      setStoredToken(null)
-      setUser(null)
+    } catch (error) {
+      const status = Number(error?.status || 0)
+      if (status === 401 || status === 403) {
+        setStoredToken(null)
+        setUser(null)
+      }
     } finally {
       setLoading(false)
     }
@@ -38,6 +43,7 @@ export function AuthProvider({ children }) {
     const data = await apiSignup(payload)
     setStoredToken(data.token)
     setUser(data.user)
+    void mergeLocalSavedRoomsToServer()
     return data
   }, [])
 
@@ -45,12 +51,14 @@ export function AuthProvider({ children }) {
     const data = await apiLogin(payload)
     setStoredToken(data.token)
     setUser(data.user)
+    void mergeLocalSavedRoomsToServer()
     return data
   }, [])
 
   const logout = useCallback(() => {
     setStoredToken(null)
     setUser(null)
+    resetSavedRoomApiThrottle()
   }, [])
 
   const value = useMemo(

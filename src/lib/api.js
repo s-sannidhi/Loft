@@ -1,3 +1,5 @@
+import { getStoredToken } from './socialApi.js'
+
 const JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b'
 const OMDB_BASE_URL = 'https://www.omdbapi.com/'
 
@@ -47,10 +49,14 @@ async function parseJsonOrThrow(response, fallbackMessage) {
 
 async function tryServerRoom(method, path, body) {
   const opts = { method }
+  const headers = {}
+  const token = getStoredToken()
+  if (token) headers.Authorization = `Bearer ${token}`
   if (body !== undefined && method !== 'GET' && method !== 'HEAD') {
-    opts.headers = { 'Content-Type': 'application/json' }
+    headers['Content-Type'] = 'application/json'
     opts.body = JSON.stringify(body)
   }
+  opts.headers = headers
   return fetch(apiUrl(path), opts)
 }
 
@@ -114,6 +120,27 @@ export async function updateRoom(roomId, roomData) {
     return data?.record
   }
   throw new Error('Room API unavailable')
+}
+
+export async function fetchRoomRecommendations(roomId) {
+  const serverRes = await tryServerRoom(
+    'GET',
+    `/api/rooms/${encodeURIComponent(roomId)}/recommendations`
+  )
+  if (serverRes.ok) {
+    return serverRes.json()
+  }
+  const text = await serverRes.text()
+  let err = text
+  try {
+    const j = JSON.parse(text)
+    err = j?.error || err
+  } catch {
+    /* ignore */
+  }
+  const e = new Error(err || `Suggestions failed (${serverRes.status})`)
+  e.status = serverRes.status
+  throw e
 }
 
 function normalizeOmdbMovie(movie) {

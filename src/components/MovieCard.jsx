@@ -1,4 +1,5 @@
 import SeriesEpisodePanel from './SeriesEpisodePanel'
+import TitleReviews from './TitleReviews'
 
 function normalizeProgress(movie) {
   if (movie.type === 'series') {
@@ -16,7 +17,16 @@ function normalizeProgress(movie) {
   }
 }
 
-function MovieCard({ movie, onUpdateProgress, animationDelayMs }) {
+function MovieCard({
+  movie,
+  onUpdateProgress,
+  onRemoveMovie,
+  animationDelayMs,
+  roomId,
+  user,
+  reviewsByImdb,
+  onRoomUpdated,
+}) {
   const isSeries = movie.type === 'series'
   const progress = normalizeProgress(movie)
 
@@ -134,6 +144,26 @@ function MovieCard({ movie, onUpdateProgress, animationDelayMs }) {
                 patchProgress={patchProgress}
               />
             </div>
+          ) : null}
+
+          {roomId && onRoomUpdated ? (
+            <TitleReviews
+              roomId={roomId}
+              imdbID={movie.imdbID}
+              user={user}
+              reviewsMap={reviewsByImdb?.[movie.imdbID]}
+              onUpdated={onRoomUpdated}
+            />
+          ) : null}
+
+          {onRemoveMovie ? (
+            <button
+              type="button"
+              onClick={() => onRemoveMovie(movie.imdbID)}
+              className="meta-font w-full rounded-lg border border-red-900/25 bg-red-900/5 px-2 py-1.5 text-center text-[11px] font-medium text-red-900/90 transition hover:bg-red-900/10 dark:border-red-200/30 dark:bg-red-500/10 dark:text-red-100 dark:hover:bg-red-500/20 sm:text-xs"
+            >
+              Remove from room
+            </button>
           ) : null}
         </div>
       </article>

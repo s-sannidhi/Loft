@@ -1,22 +1,29 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import ThemeToggle from '../components/ThemeToggle'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import SiteHeader from '../components/SiteHeader'
 import { useAuth } from '../context/useAuth'
+import { HANDLE_RULES_TEXT, validateStrictUsername } from '../lib/usernameValidate'
 import {
   fetchPublicProfile,
   fetchPublicWatched,
+  mediaUrl,
+  setStoredToken,
   updateProfile,
+  uploadAvatar,
 } from '../lib/socialApi'
 
 function ProfilePage() {
   const { username } = useParams()
+  const navigate = useNavigate()
   const { user, refresh } = useAuth()
   const [profile, setProfile] = useState(null)
   const [watched, setWatched] = useState([])
   const [error, setError] = useState('')
   const [editDisplay, setEditDisplay] = useState('')
+  const [editUsername, setEditUsername] = useState('')
   const [editAvatar, setEditAvatar] = useState('')
   const [saveMsg, setSaveMsg] = useState('')
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -30,6 +37,7 @@ function ProfilePage() {
         if (!cancelled) {
           setProfile(p)
           setEditDisplay(p.displayName || p.username || '')
+          setEditUsername(p.username || '')
           setEditAvatar(p.avatarUrl || '')
           setWatched(w?.items || [])
         }
@@ -50,37 +58,87 @@ function ProfilePage() {
     setSaveMsg('')
     setError('')
     try {
-      await updateProfile({
+      const body = {
         displayName: editDisplay.trim(),
         avatarUrl: editAvatar.trim(),
-      })
-      setSaveMsg('Saved.')
+      }
+      if (editUsername.trim() !== profile.username) {
+        const vu = validateStrictUsername(editUsername)
+        if (!vu.ok) {
+          setError(vu.error)
+          return
+        }
+        body.username = vu.username
+      }
+      const data = await updateProfile(body)
+      if (data.token) setStoredToken(data.token)
+      setSaveMsg(
+        data.token
+          ? 'Saved — your profile link changed if you updated your handle.'
+          : 'Saved.'
+      )
       void refresh()
-      const p = await fetchPublicProfile(username)
-      setProfile(p)
+      const nextName = data.username || profile.username
+      if (data.username && data.username !== username) {
+        navigate(`/u/${data.username}`, { replace: true })
+      } else {
+        const p = await fetchPublicProfile(nextName)
+        setProfile(p)
+        setEditUsername(p.username || '')
+      }
     } catch (err) {
       setError(err.message)
     }
   }
 
+  async function copyProfileUrl() {
+    if (!profile?.username) return
+    const url = `${window.location.origin}/u/${profile.username}`
+    try {
+      await navigator.clipboard.writeText(url)
+      setSaveMsg('Profile link copied.')
+      window.setTimeout(() => setSaveMsg(''), 3000)
+    } catch {
+      setError('Could not copy link')
+    }
+  }
+
+  async function copyHandle() {
+    if (!profile?.username) return
+    try {
+      await navigator.clipboard.writeText(`@${profile.username}`)
+      setSaveMsg('@handle copied.')
+      window.setTimeout(() => setSaveMsg(''), 3000)
+    } catch {
+      setError('Could not copy handle')
+    }
+  }
+
+  async function handleAvatarFileInput(e) {
+    const file = e.target.files?.[0]
+    const input = e.target
+    if (!file) return
+    setUploadingAvatar(true)
+    setSaveMsg('')
+    setError('')
+    try {
+      const data = await uploadAvatar(file)
+      if (data?.avatarUrl) setEditAvatar(data.avatarUrl)
+      setSaveMsg('Photo updated.')
+      void refresh()
+      const p = await fetchPublicProfile(username)
+      setProfile(p)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      input.value = ''
+      setUploadingAvatar(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-parchment">
-      <header className="border-b border-mutedline bg-parchment px-5 py-4 lg:px-10">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="font-bold text-accent">
-              Loft
-            </Link>
-            <Link to="/watch" className="text-sm text-ink/70 hover:text-ink">
-              Watchlist
-            </Link>
-            <Link to="/friends" className="text-sm text-ink/70 hover:text-ink">
-              Friends
-            </Link>
-          </div>
-          <ThemeToggle />
-        </div>
-      </header>
+      <SiteHeader />
       <main className="mx-auto max-w-3xl px-5 py-10 lg:px-10">
         {error ? (
           <p className="text-red-800">{error}</p>
@@ -89,7 +147,7 @@ function ProfilePage() {
             <div className="flex flex-wrap items-start gap-4">
               {profile.avatarUrl ? (
                 <img
-                  src={profile.avatarUrl}
+                  src={mediaUrl(profile.avatarUrl)}
                   alt=""
                   className="h-24 w-24 rounded-2xl border border-mutedline object-cover"
                 />
@@ -115,6 +173,16 @@ function ProfilePage() {
               >
                 <p className="text-sm font-medium text-ink">Edit your profile</p>
                 <label className="block text-sm">
+                  <span className="text-ink/75">Handle (@username)</span>
+                  <input
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-mutedline bg-cream px-3 py-2 text-ink"
+                    autoComplete="username"
+                  />
+                  <p className="meta-font mt-1 text-xs text-ink/55">{HANDLE_RULES_TEXT}</p>
+                </label>
+                <label className="block text-sm">
                   <span className="text-ink/75">Display name</span>
                   <input
                     value={editDisplay}
@@ -122,8 +190,49 @@ function ProfilePage() {
                     className="mt-1 w-full rounded-lg border border-mutedline bg-cream px-3 py-2 text-ink"
                   />
                 </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyProfileUrl()}
+                    className="rounded-lg border border-mutedline bg-cream px-3 py-1.5 text-xs font-medium text-ink hover:bg-card"
+                  >
+                    Copy profile link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copyHandle()}
+                    className="rounded-lg border border-mutedline bg-cream px-3 py-1.5 text-xs font-medium text-ink hover:bg-card"
+                  >
+                    Copy @handle
+                  </button>
+                </div>
+                <div className="text-sm">
+                  <span className="text-ink/75">Profile photo</span>
+                  <p className="meta-font mt-1 text-xs text-ink/55">
+                    Pick a file — it uploads right away (no second step).
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <label
+                      className={`inline-flex cursor-pointer rounded-lg bg-accent px-4 py-2 text-sm font-medium text-cream shadow-cafe hover:brightness-110 ${
+                        uploadingAvatar ? 'pointer-events-none opacity-70' : ''
+                      }`}
+                    >
+                      {uploadingAvatar ? 'Uploading…' : 'Choose photo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        disabled={uploadingAvatar}
+                        onChange={handleAvatarFileInput}
+                      />
+                    </label>
+                    <span className="meta-font text-xs text-ink/50">
+                      JPEG, PNG, WebP, or GIF · max 2&nbsp;MB
+                    </span>
+                  </div>
+                </div>
                 <label className="block text-sm">
-                  <span className="text-ink/75">Avatar image URL</span>
+                  <span className="text-ink/75">Or paste an image URL</span>
                   <input
                     value={editAvatar}
                     onChange={(e) => setEditAvatar(e.target.value)}

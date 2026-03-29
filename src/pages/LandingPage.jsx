@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
+import { useAuth } from '../context/useAuth'
 
 function FlowDiagram() {
   return (
@@ -193,6 +194,8 @@ function ArchitectureDiagram() {
 }
 
 function LandingPage() {
+  const { user, logout, loading } = useAuth()
+
   return (
     <div className="min-h-screen bg-parchment">
       <header className="border-b border-mutedline bg-parchment">
@@ -214,64 +217,144 @@ function LandingPage() {
               Open watchlist
             </Link>
             <Link
-              to="/login"
+              to="/rooms"
               className="text-sm font-medium text-ink/80 hover:text-ink"
             >
-              Log in
+              Your rooms
             </Link>
-            <Link
-              to="/signup"
-              className="rounded-lg border border-mutedline bg-cream px-3 py-1.5 text-sm font-medium text-ink hover:bg-card"
-            >
-              Sign up
-            </Link>
+            {user ? (
+              <>
+                <Link to="/friends" className="text-sm font-medium text-ink/80 hover:text-ink">
+                  Friends
+                </Link>
+                <Link
+                  to={`/u/${user.username}`}
+                  className="text-sm font-medium text-ink/80 hover:text-ink"
+                >
+                  Profile
+                </Link>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="text-sm font-medium text-ink/70 hover:text-ink"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="text-sm font-medium text-ink/80 hover:text-ink"
+                >
+                  Log in
+                </Link>
+                <Link
+                  to="/signup"
+                  className="rounded-lg border border-mutedline bg-cream px-3 py-1.5 text-sm font-medium text-ink hover:bg-card"
+                >
+                  Sign up
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-3xl px-5 py-14 lg:px-10">
-        <p className="text-sm font-medium uppercase tracking-wide text-honey">
-          Shared watchlists, café calm
-        </p>
-        <h1 className="mt-3 text-4xl font-bold tracking-tight text-ink md:text-5xl">
-          Watch together without the chaos.
-        </h1>
-        <p className="mt-5 text-lg leading-relaxed text-ink/80">
-          Loft is a warm, collaborative shelf for movies and series—room links for
-          your crew, progress you can trust, and profiles for what you have finished.
-        </p>
-        <div className="mt-10 flex flex-wrap gap-3">
-          <Link
-            to="/watch"
-            className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-cream shadow-cafe hover:brightness-110"
-          >
-            Start a room
-          </Link>
-          <Link
-            to="/signup"
-            className="rounded-xl border border-mutedline bg-cream px-6 py-3 text-sm font-semibold text-ink hover:bg-card"
-          >
-            Create an account
-          </Link>
-        </div>
+        {loading ? (
+          <>
+            <p className="text-sm font-medium uppercase tracking-wide text-honey">
+              Shared watchlists, café calm
+            </p>
+            <h1 className="mt-3 text-4xl font-bold tracking-tight text-ink md:text-5xl">
+              Watch together without the chaos.
+            </h1>
+            <p className="mt-5 text-lg leading-relaxed text-ink/80">
+              Loading your session…
+            </p>
+          </>
+        ) : user ? (
+          <>
+            <p className="text-sm font-medium uppercase tracking-wide text-honey">
+              Welcome back
+            </p>
+            <h1 className="mt-3 text-4xl font-bold tracking-tight text-ink md:text-5xl">
+              Hi, {user.displayName || user.username}.
+            </h1>
+            <p className="mt-5 text-lg leading-relaxed text-ink/80">
+              Jump into your watchlist, pick up saved rooms, or spin up a fresh room
+              for your crew—same link, shared shelf, synced progress.
+            </p>
+            <div className="mt-10 flex flex-wrap gap-3">
+              <Link
+                to="/watch"
+                className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-cream shadow-cafe hover:brightness-110"
+              >
+                Open watchlist
+              </Link>
+              <Link
+                to="/rooms"
+                className="rounded-xl border border-mutedline bg-cream px-6 py-3 text-sm font-semibold text-ink hover:bg-card"
+              >
+                Your rooms
+              </Link>
+              <Link
+                to="/watch"
+                className="rounded-xl border border-mutedline border-l-4 border-l-honey bg-cream px-6 py-3 text-sm font-semibold text-ink hover:bg-card"
+              >
+                Start a new room
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-medium uppercase tracking-wide text-honey">
+              Shared watchlists, café calm
+            </p>
+            <h1 className="mt-3 text-4xl font-bold tracking-tight text-ink md:text-5xl">
+              Watch together without the chaos.
+            </h1>
+            <p className="mt-5 text-lg leading-relaxed text-ink/80">
+              Loft is a warm, collaborative shelf for movies and series—room links for
+              your crew, progress you can trust, and profiles for what you have
+              finished.
+            </p>
+            <div className="mt-10 flex flex-wrap gap-3">
+              <Link
+                to="/watch"
+                className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-cream shadow-cafe hover:brightness-110"
+              >
+                Start a room
+              </Link>
+              <Link
+                to="/signup"
+                className="rounded-xl border border-mutedline bg-cream px-6 py-3 text-sm font-semibold text-ink hover:bg-card"
+              >
+                Create an account
+              </Link>
+            </div>
+          </>
+        )}
 
-        <section className="mt-20 space-y-4">
+        <section className={`space-y-4 ${user && !loading ? 'mt-12' : 'mt-20'}`}>
           <h2 className="text-2xl font-semibold text-ink">How it works</h2>
           <p className="text-ink/75">
-            Spin up a room, share one link, and everyone sees the same list—updates
-            sync on a gentle timer so you are never fighting the UI.
+            {user && !loading
+              ? 'One link, one shelf—everyone stays in sync.'
+              : 'Spin up a room, share one link, and everyone sees the same list—updates sync on a gentle timer so you are never fighting the UI.'}
           </p>
           <div className="rounded-2xl border border-mutedline bg-card p-6 shadow-cafe">
             <FlowDiagram />
           </div>
         </section>
 
-        <section className="mt-16 space-y-4">
+        <section className={`space-y-4 ${user && !loading ? 'mt-10' : 'mt-16'}`}>
           <h2 className="text-2xl font-semibold text-ink">Architecture snapshot</h2>
           <p className="text-ink/75">
-            The browser talks to a small Loft API for accounts and social graph; room
-            documents can be stored in JSONBin behind the server so keys stay off the
-            client.
+            {user && !loading
+              ? 'Rooms live behind the Loft API; accounts and friends stay on the same server.'
+              : 'The browser talks to a small Loft API for accounts and social graph; room documents can be stored in JSONBin behind the server so keys stay off the client.'}
           </p>
           <div className="rounded-2xl border border-mutedline bg-card p-6 shadow-cafe">
             <ArchitectureDiagram />

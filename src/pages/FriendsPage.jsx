@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import ThemeToggle from '../components/ThemeToggle'
+import SiteHeader from '../components/SiteHeader'
 import { useAuth } from '../context/useAuth'
 import {
   fetchFriends,
@@ -79,19 +79,7 @@ function FriendsPage() {
 
   return (
     <div className="min-h-screen bg-parchment">
-      <header className="border-b border-mutedline bg-parchment px-5 py-4 lg:px-10">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="font-bold text-accent">
-              Loft
-            </Link>
-            <Link to="/watch" className="text-sm text-ink/70 hover:text-ink">
-              Watchlist
-            </Link>
-          </div>
-          <ThemeToggle />
-        </div>
-      </header>
+      <SiteHeader />
       <main className="mx-auto max-w-3xl px-5 py-10 lg:px-10">
         <h1 className="text-3xl font-semibold text-ink">Friends</h1>
         <form onSubmit={handleSend} className="mt-8 flex flex-wrap gap-2">
