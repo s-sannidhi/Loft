@@ -6,8 +6,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { randomUUID } from 'crypto'
 import { mkdirSync, existsSync, readdirSync, unlinkSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { join } from 'path'
 import { WatchmodeClient } from '@watchmode/api-client'
 import { loadStore, saveStore } from './store.mjs'
 import {
@@ -28,6 +27,7 @@ import {
   recordWithShareRemoved,
 } from './roomsStore.mjs'
 import { jsonBinGetRecord, jsonBinPutRecord } from './jsonBinRooms.mjs'
+import { loftDataDir } from './dataDir.mjs'
 import { validateStrictUsername } from './usernameValidate.mjs'
 import { fetch as undiciFetch } from 'undici'
 
@@ -36,8 +36,7 @@ if (typeof globalThis.fetch !== 'function') {
   globalThis.fetch = undiciFetch
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const AVATAR_DIR = join(__dirname, 'data', 'avatars')
+const AVATAR_DIR = join(loftDataDir(), 'avatars')
 const AVATAR_MIME_TO_EXT = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
@@ -1455,6 +1454,6 @@ app.listen(PORT, () => {
   const streaming = parts.length ? parts.join('+') : 'off'
   const rooms = roomsBackend()
   console.log(
-    `Loft API http://localhost:${PORT} (rooms: ${rooms}, streaming: ${streaming})`
+    `Loft API http://localhost:${PORT} (rooms: ${rooms}, streaming: ${streaming}, data: ${loftDataDir()})`
   )
 })

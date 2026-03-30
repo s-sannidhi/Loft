@@ -65,6 +65,11 @@ function canDirectJsonBin() {
   }
 }
 
+/** When set, room CRUD must go through the Loft API only — never fall back to browser JSONBin (that would strip owner/shares/reviews on PUT). */
+function serverRoomsConfigured() {
+  return Boolean(String(import.meta.env.VITE_API_URL || '').trim())
+}
+
 export async function createRoom() {
   const payload = { roomName: 'Loft', movies: [] }
   const serverRes = await tryServerRoom('POST', '/api/rooms', payload)
@@ -85,6 +90,14 @@ export async function createRoom() {
         : 'Room API returned OK but no room id. Check API logs and JSONBIN_KEY / server configuration.'
     )
   }
+  if (serverRoomsConfigured()) {
+    const t = data?.error || rawText
+    throw new Error(
+      typeof t === 'string' && t
+        ? t
+        : `Room API error (${serverRes.status}). Fix the API or wait for the host to wake; do not rely on VITE_JSONBIN_KEY fallback when VITE_API_URL is set.`
+    )
+  }
   if (canDirectJsonBin()) {
     const response = await fetch(JSONBIN_BASE_URL, {
       method: 'POST',
@@ -94,11 +107,10 @@ export async function createRoom() {
     const data = await parseJsonOrThrow(response, 'Failed to create room')
     return data?.metadata?.id
   }
-  const t = data?.error || rawText
   throw new Error(
-    typeof t === 'string' && t
-      ? t
-      : 'Room API unavailable. Run the Loft server or set VITE_JSONBIN_KEY for direct mode.'
+    typeof (data?.error || rawText) === 'string' && (data?.error || rawText)
+      ? data?.error || rawText
+      : 'Room API unavailable. Run the Loft server or set VITE_JSONBIN_KEY for direct mode (no VITE_API_URL).'
   )
 }
 
@@ -106,6 +118,18 @@ export async function getRoom(roomId) {
   const serverRes = await tryServerRoom('GET', `/api/rooms/${roomId}/latest`)
   if (serverRes.ok) {
     return serverRes.json()
+  }
+  if (serverRoomsConfigured()) {
+    const text = await serverRes.text().catch(() => '')
+    let err = text
+    try {
+      err = JSON.parse(text)?.error || err
+    } catch {
+      /* ignore */
+    }
+    throw new Error(
+      err || `Failed to load room (${serverRes.status}). Check VITE_API_URL and the API host.`
+    )
   }
   if (canDirectJsonBin()) {
     const response = await fetch(`${JSONBIN_BASE_URL}/${roomId}/latest`, {
@@ -122,11 +146,40 @@ export async function updateRoom(roomId, roomData) {
   if (serverRes.ok) {
     return serverRes.json()
   }
+  if (serverRoomsConfigured()) {
+    const text = await serverRes.text().catch(() => '')
+    let err = text
+    try {
+      err = JSON.parse(text)?.error || err
+    } catch {
+      /* ignore */
+    }
+    throw new Error(
+      err || `Failed to save room (${serverRes.status}). Check VITE_API_URL and the API host.`
+    )
+  }
   if (canDirectJsonBin()) {
+    const getRes = await fetch(`${JSONBIN_BASE_URL}/${roomId}/latest`, {
+      headers: getJsonBinHeaders(),
+    })
+    const getData = await parseJsonOrThrow(getRes, 'Failed to load room')
+    const existing =
+      getData?.record && typeof getData.record === 'object' && !Array.isArray(getData.record)
+        ? getData.record
+        : {}
+    const merged = {
+      ...existing,
+      roomName:
+        roomData?.roomName !== undefined
+          ? roomData.roomName
+          : (existing.roomName ?? 'Loft'),
+      movies:
+        roomData?.movies !== undefined ? roomData.movies : (existing.movies ?? []),
+    }
     const response = await fetch(`${JSONBIN_BASE_URL}/${roomId}`, {
       method: 'PUT',
       headers: getJsonBinHeaders(),
-      body: JSON.stringify(roomData),
+      body: JSON.stringify(merged),
     })
     const data = await parseJsonOrThrow(response, 'Failed to save room')
     return data?.record

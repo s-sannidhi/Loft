@@ -142,8 +142,9 @@ The app is tuned for sleepy hosts (e.g. Render free): Loft API calls **retry** o
 Free Node hosts usually use an **ephemeral filesystem**. Anything under `server/data/` (`loft-db.json`, `rooms.json`, uploaded avatars) can be **lost** on redeploy or when the instance sleeps.
 
 - **Rooms:** set **`JSONBIN_KEY`** so watchlists (including reviews and sharing metadata) survive redeploys without a persistent disk, **or** use **`ROOM_STORAGE=local`** and accept ephemeral disk on free tiers unless the host gives you a real volume (see **Local room storage vs JSONBin** above).
-- **Accounts, profile shelf, avatars:** still file-backed unless you run the API on a **VM with a real disk** (e.g. Oracle Cloud Always Free) or migrate storage later.
-- Use a strong **`JWT_SECRET`** in production; treat free-tier data as non-durable unless you use JSONBin + a persistent host for auth files.
+- **Accounts, profile shelf, avatars:** stored next to rooms on disk. To keep them across deploys on PaaS, add a **persistent disk** and set **`LOFT_DATA_DIR`** to that mount path (e.g. Render/Railway disk mounted at `/var/loft-data`). The API will write `loft-db.json`, `rooms.json` (if local rooms), and avatars there. Without a disk or external DB, signups and friends reset when the instance filesystem resets.
+- **Frontend:** if you use **`VITE_API_URL`**, do **not** also rely on **`VITE_JSONBIN_KEY`** for saves—the app only talks to JSONBin from the browser when the API URL is unset. (Having both used to send failed API writes straight to JSONBin and **overwrite** the bin with only title + movies, which looked like a “new” anonymous room after a rename.)
+- Use a strong **`JWT_SECRET`** in production; treat free-tier data as non-durable unless you use JSONBin for rooms **and** `LOFT_DATA_DIR` on a real volume (or a persistent host) for auth files.
 
 ## JSONBin key in `.env`
 

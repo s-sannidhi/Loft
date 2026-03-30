@@ -1,9 +1,8 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
+import { loftDataDir } from './dataDir.mjs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const DATA_PATH = join(__dirname, 'data', 'loft-db.json')
+const DATA_PATH = join(loftDataDir(), 'loft-db.json')
 
 function defaultData() {
   return {

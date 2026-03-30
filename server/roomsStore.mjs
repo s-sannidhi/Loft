@@ -1,10 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
 import { randomUUID } from 'crypto'
+import { loftDataDir } from './dataDir.mjs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOMS_PATH = join(__dirname, 'data', 'rooms.json')
+const ROOMS_PATH = join(loftDataDir(), 'rooms.json')
 
 function defaultDb() {
   return { rooms: {} }
